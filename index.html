@@ -9,7 +9,7 @@
     <style>
         body { font-family: Arial; background: #f5f5f5; margin: 0; padding: 10px; color: #333; }
         h1 { font-size: 1.2em; text-align: center; color: #2c3e50; }
-        .tab-bar { display: flex; justify-content: center; margin: 10px 0; }
+        .tab-bar { display: flex; justify-content: center; margin: 10px 0; flex-wrap: wrap; }
         .tab { padding: 10px 12px; background: #ddd; cursor: pointer; font-size: 0.8em; border-radius: 8px 8px 0 0; margin: 0 2px; }
         .tab.active { background: #3498db; color: white; }
         .panel { display: none; background: white; padding: 15px; border-radius: 10px; margin-bottom: 10px; }
@@ -26,12 +26,13 @@
         .green { color: #27ae60; }
         .red { color: #e74c3c; }
         #status { text-align: center; color: #aaa; font-size: 0.8em; margin: 5px; }
-        small { color: #888; }
+        .backup-bar { background: #fff3cd; padding: 8px; border-radius: 8px; margin: 10px 0; text-align: center; font-size: 0.85em; }
+        .btn-small { width: auto; display: inline-block; padding: 8px 15px; font-size: 0.85em; margin: 3px; }
     </style>
 </head>
 <body>
     <h1>📦 Учёт товара</h1>
-    <p id="status">🔄 Загрузка данных...</p>
+    <p id="status">🟢 Готово</p>
     
     <div class="tab-bar">
         <div class="tab active" onclick="showTab('income')">📥 Приёмка</div>
@@ -59,8 +60,6 @@
     <div id="stock" class="panel">
         <h3>Текущие остатки</h3>
         <div id="stock_list"></div>
-        <hr>
-        <button class="danger" onclick="clearAll()">🗑 Сбросить всё</button>
     </div>
     
     <div id="report" class="panel">
@@ -68,75 +67,59 @@
         <div id="report_content"><p>Добавьте товары и продажи.</p></div>
     </div>
 
-    <script>
-        // Облачное хранилище через jsonbin.io (бесплатный API)
-        var BIN_ID = localStorage.getItem("bin_id") || "";
-        var API_KEY = "$2a$10$YOUR_API_KEY"; // ЗАМЕНИТЕ НА СВОЙ КЛЮЧ с jsonbin.io
-        var BASE_URL = "https://api.jsonbin.io/v3/b";
+    <!-- Резервное копирование -->
+    <div class="backup-bar">
+        <button class="btn-small" onclick="exportData()">📤 Скачать backup</button>
+        <button class="btn-small" onclick="document.getElementById('importFile').click()">📥 Восстановить</button>
+        <input type="file" id="importFile" style="display:none" onchange="importData(event)">
+        <br><small>Данные хранятся в памяти приложения. Чистка кэша браузера не удаляет их.</small>
+    </div>
 
+    <script>
         var data = { items: {} };
 
-        // Загрузка данных из облака
-        function loadCloudData() {
-            if (!BIN_ID) {
-                // Создаём новое хранилище
-                createBin();
-                return;
+        // Загрузка данных
+        function loadData() {
+            var saved = localStorage.getItem("store_data_v2");
+            if (saved) {
+                try {
+                    data = JSON.parse(saved);
+                } catch(e) {
+                    data = { items: {} };
+                }
             }
-            document.getElementById("status").textContent = "🔄 Загрузка...";
-            fetch(BASE_URL + "/" + BIN_ID, {
-                headers: { "X-Master-Key": API_KEY }
-            })
-            .then(function(r) { return r.json(); })
-            .then(function(res) {
-                data = res.record;
-                document.getElementById("status").textContent = "🟢 Готово";
-                renderSaleSelect();
-                renderStock();
-            })
-            .catch(function() {
-                document.getElementById("status").textContent = "⚠️ Ошибка загрузки. Работаем локально.";
-            });
+            renderSaleSelect();
         }
 
-        function createBin() {
-            fetch(BASE_URL, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "X-Master-Key": API_KEY
-                },
-                body: JSON.stringify({ items: {} })
-            })
-            .then(function(r) { return r.json(); })
-            .then(function(res) {
-                BIN_ID = res.metadata.id;
-                localStorage.setItem("bin_id", BIN_ID);
-                data = { items: {} };
-                document.getElementById("status").textContent = "🟢 Хранилище создано";
-            })
-            .catch(function() {
-                document.getElementById("status").textContent = "⚠️ Не удалось создать хранилище.";
-            });
+        function saveData() {
+            localStorage.setItem("store_data_v2", JSON.stringify(data));
         }
 
-        // Сохранение в облако
-        function saveToCloud() {
-            if (!BIN_ID) return;
-            fetch(BASE_URL + "/" + BIN_ID, {
-                method: "PUT",
-                headers: {
-                    "Content-Type": "application/json",
-                    "X-Master-Key": API_KEY
-                },
-                body: JSON.stringify(data)
-            })
-            .then(function() {
-                document.getElementById("status").textContent = "🟢 Сохранено в облаке";
-            })
-            .catch(function() {
-                document.getElementById("status").textContent = "⚠️ Не сохранено. Проверьте интернет.";
-            });
+        // Резервное копирование
+        function exportData() {
+            var blob = new Blob([JSON.stringify(data)], { type: "application/json" });
+            var a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = "backup_" + new Date().toISOString().slice(0,10) + ".json";
+            a.click();
+            document.getElementById("status").textContent = "🟢 Backup скачан";
+        }
+
+        function importData(event) {
+            var file = event.target.files[0];
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    data = JSON.parse(e.target.result);
+                    saveData();
+                    document.getElementById("status").textContent = "🟢 Данные восстановлены!";
+                    renderSaleSelect();
+                    renderStock();
+                } catch(err) {
+                    alert("Ошибка в файле!");
+                }
+            };
+            reader.readAsText(file);
         }
 
         function showTab(id) {
@@ -161,11 +144,11 @@
             }
             data.items[name].qty += qty;
             data.items[name].cost = price;
-            saveToCloud();
+            saveData();
             document.getElementById("inc_name").value = "";
             document.getElementById("inc_qty").value = "";
             document.getElementById("inc_price").value = "";
-            alert("Приход: " + name + " +" + qty + " шт.");
+            document.getElementById("status").textContent = "🟢 Приход: " + name + " +" + qty + " шт.";
             renderSaleSelect();
         }
 
@@ -189,17 +172,17 @@
             if (!name || isNaN(endQty) || isNaN(salePrice)) { alert("Заполните все поля!"); return; }
             var item = data.items[name];
             if (!item || item.qty < endQty) {
-                alert("Остаток не может быть больше, чем есть на складе (" + (item ? item.qty : 0) + ")"); return;
+                alert("Остаток не может быть больше, чем есть (" + (item ? item.qty : 0) + ")"); return;
             }
             var soldQty = item.qty - endQty;
             item.sold += soldQty;
             item.revenue += soldQty * salePrice;
             item.salePrice = salePrice;
             item.qty = endQty;
-            saveToCloud();
+            saveData();
             document.getElementById("sale_qty").value = "";
             document.getElementById("sale_price").value = "";
-            alert("Продано: " + name + " -" + soldQty + " шт. на " + (soldQty * salePrice) + " руб.");
+            document.getElementById("status").textContent = "🟢 Продано: " + name + " -" + soldQty + " шт.";
             renderSaleSelect();
         }
 
@@ -212,7 +195,7 @@
                 }
             }
             html += '</table>';
-            document.getElementById("stock_list").innerHTML = html;
+            document.getElementById("stock_list").innerHTML = html || '<p>Нет товаров.</p>';
         }
 
         function renderReport() {
@@ -232,21 +215,22 @@
                 }
             }
             html = '<div class="report-box" style="background:#2c3e50; color:white;"><b>ИТОГО</b><br>Выручка: ' + totalRevenue + ' руб.<br>Прибыль: <span class="green">' + totalProfit + ' руб.</span></div>' + html;
-            document.getElementById("report_content").innerHTML = html || '<p>Нет данных.</p>';
+            document.getElementById("report_content").innerHTML = html || '<p>Нет данных о продажах.</p>';
         }
 
         function clearAll() {
-            if (confirm("Точно удалить ВСЕ данные? Это необратимо!")) {
+            if (confirm("Точно удалить ВСЕ данные?")) {
                 data = { items: {} };
-                saveToCloud();
-                alert("Данные удалены.");
+                saveData();
+                document.getElementById("status").textContent = "🟢 Данные удалены";
                 renderStock();
                 renderReport();
             }
         }
 
         // Запуск
-        loadCloudData();
+        loadData();
+        renderSaleSelect();
     </script>
 </body>
 </html>
