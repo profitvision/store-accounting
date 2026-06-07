@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Учёт товара</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f5f5f5;
+            margin: 0;
+            padding: 10px;
+            color: #333;
+        }
+
+        h1 {
+            font-size: 1.3em;
+            text-align: center;
+            color: #2c3e50;
+        }
+
+        .tab-bar {
+            display: flex;
+            justify-content: center;
+            margin: 10px 0;
+        }
+
+        .tab {
+            padding: 10px 15px;
+            background: #ddd;
+            cursor: pointer;
+            font-size: 0.85em;
+            border-radius: 8px 8px 0 0;
+            margin: 0 2px;
+        }
+
+        .tab.active {
+            background: #3498db;
+            color: white;
+        }
+
+        .panel {
+            display: none;
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+        }
+
+        .panel.active {
+            display: block;
+        }
+
+        input,
+        button {
+            width: 100%;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            font-size: 1em;
+            box-sizing: border-box;
+        }
+
+        button {
+            background: #3498db;
+            color: white;
+            border: none;
+            font-weight: bold;
+        }
+
+        button:active {
+            background: #2980b9;
+        }
+
+        .danger {
+            background: #e74c3c;
+        }
+
+        .danger:active {
+            background: #c0392b;
+        }
+
+        .success {
+            background: #27ae60;
+        }
+
+        .success:active {
+            background: #219a52;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85em;
+        }
+
+        th {
+            background: #3498db;
+            color: white;
+            padding: 8px;
+            text-align: left;
+        }
+
+        td {
+            padding: 6px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .report-box {
+            background: #ecf0f1;
+            padding: 12px;
+            border-radius: 8px;
+            margin: 8px 0;
+        }
+
+        .report-box h3 {
+            margin: 0 0 5px 0;
+        }
+
+        .big-num {
+            font-size: 2em;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .green {
+            color: #27ae60;
+        }
+
+        .red {
+            color: #e74c3c;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>📦 Учёт товара</h1>
+
+    <div class="tab-bar">
+        <div class="tab active" onclick="showTab('income')">📥 Приёмка</div>
+        <div class="tab" onclick="showTab('sale')">💰 Продажа</div>
+        <div class="tab" onclick="showTab('stock')">📋 Товары</div>
+        <div class="tab" onclick="showTab('report')">📊 Отчёт</div>
+    </div>
+
+    <!-- Приёмка -->
+    <div id="income" class="panel active">
+        <h3>Добавить приход</h3>
+        <input type="text" id="inc_name" placeholder="Название товара">
+        <input type="number" id="inc_qty" placeholder="Количество" step="any">
+        <input type="number" id="inc_price" placeholder="Закупочная цена за шт." step="any">
+        <button class="success" onclick="addIncome()">✅ Записать приход</button>
+    </div>
+
+    <!-- Продажа -->
+    <div id="sale" class="panel">
+        <h3>Записать продажу (остаток на конец дня)</h3>
+        <select id="sale_item"
+            style="width:100%; padding:10px; margin:5px 0; border-radius:8px; border:1px solid #ccc;"></select>
+        <input type="number" id="sale_qty" placeholder="Остаток на конец дня" step="any">
+        <input type="number" id="sale_price" placeholder="Цена продажи за шт." step="any">
+        <button onclick="addSale()">💸 Записать продажу</button>
+    </div>
+
+    <!-- Склад -->
+    <div id="stock" class="panel">
+        <h3>Текущие остатки</h3>
+        <div id="stock_list"></div>
+        <hr>
+        <button class="danger" onclick="clearAll()">🗑 Сбросить всё</button>
+    </div>
+
+    <!-- Отчёт -->
+    <div id="report" class="panel">
+        <h3>📊 Отчёт за период</h3>
+        <div id="report_content">
+            <p>Добавьте товары и продажи, чтобы увидеть отчёт.</p>
+        </div>
+    </div>
+
+    <script>
+        // База в памяти телефона
+        function getData() {
+            var d = localStorage.getItem("store_data");
+            return d ? JSON.parse(d) : { items: {}, log: [] };
+        }
+        function saveData(data) {
+            localStorage.setItem("store_data", JSON.stringify(data));
+        }
+
+        // Показать вкладку
+        function showTab(id) {
+            document.querySelectorAll('.panel').forEach(function (p) { p.classList.remove('active'); });
+            document.querySelectorAll('.tab').forEach(function (t) { t.classList.remove('active'); });
+            document.getElementById(id).classList.add('active');
+            event.target.classList.add('active');
+            if (id === 'stock') renderStock();
+            if (id === 'report') renderReport();
+            if (id === 'sale') renderSaleSelect();
+        }
+
+        // Приход
+        function addIncome() {
+            var name = document.getElementById("inc_name").value.trim();
+            var qty = parseFloat(document.getElementById("inc_qty").value);
+            var price = parseFloat(document.getElementById("inc_price").value);
+            if (!name || isNaN(qty) || isNaN(price) || qty <= 0) {
+                alert("Заполните все поля корректно!");
+                return;
+            }
+            var data = getData();
+            if (!data.items[name]) {
+                data.items[name] = { qty: 0, cost: 0, sold: 0, revenue: 0, salePrice: 0 };
+            }
+            data.items[name].qty += qty;
+            data.items[name].cost = price; // Запоминаем последнюю закупочную цену
+            data.log.push({ type: "приход", name: name, qty: qty, price: price, date: new Date().toLocaleString() });
+            saveData(data);
+            document.getElementById("inc_name").value = "";
+            document.getElementById("inc_qty").value = "";
+            document.getElementById("inc_price").value = "";
+            alert("Приход записан: " + name + " +" + qty + " шт.");
+            renderSaleSelect();
+        }
+
+        // Заполнить выпадающий список товаров
+        function renderSaleSelect() {
+            var data = getData();
+            var sel = document.getElementById("sale_item");
+            sel.innerHTML = "";
+            for (var name in data.items) {
+                if (data.items[name].qty > 0) {
+                    var opt = document.createElement("option");
+                    opt.value = name;
+                    opt.textContent = name + " (на складе: " + data.items[name].qty + " шт.)";
+                    sel.appendChild(opt);
+                }
+            }
+        }
+
+        // Продажа
+        function addSale() {
+            var name = document.getElementById("sale_item").value;
+            var endQty = parseFloat(document.getElementById("sale_qty").value);
+            var salePrice = parseFloat(document.getElementById("sale_price").value);
+            if (!name || isNaN(endQty) || isNaN(salePrice)) {
+                alert("Заполните все поля!");
+                return;
+            }
+            var data = getData();
+            var item = data.items[name];
+            if (!item || item.qty < endQty) {
+                alert("Остаток не может быть больше, чем есть на складе (" + item.qty + ")");
+                return;
+            }
+            var soldQty = item.qty - endQty;
+            item.sold += soldQty;
+            item.revenue += soldQty * salePrice;
+            item.salePrice = salePrice;
+            item.qty = endQty;
+            data.log.push({ type: "продажа", name: name, soldQty: soldQty, salePrice: salePrice, date: new Date().toLocaleString() });
+            saveData(data);
+            document.getElementById("sale_qty").value = "";
+            document.getElementById("sale_price").value = "";
+            alert("Продано: " + name + " -" + soldQty + " шт. на " + (soldQty * salePrice) + " руб.");
+            renderSaleSelect();
+        }
+
+        // Склад
+        function renderStock() {
+            var data = getData();
+            var html = '<table><tr><th>Товар</th><th>Остаток</th><th>Закуп.цена</th></tr>';
+            var hasItems = false;
+            for (var name in data.items) {
+                var item = data.items[name];
+                if (item.qty > 0 || item.sold > 0) {
+                    hasItems = true;
+                    html += '<tr><td>' + name + '</td><td>' + item.qty + '</td><td>' + item.cost + ' руб.</td></tr>';
+                }
+            }
+            html += '</table>';
+            if (!hasItems) html = '<p>Нет товаров.</p>';
+            document.getElementById("stock_list").innerHTML = html;
+        }
+
+        // Отчёт
+        function renderReport() {
+            var data = getData();
+            var totalCost = 0;
+            var totalRevenue = 0;
+            var totalProfit = 0;
+            var html = "";
+
+            for (var name in data.items) {
+                var item = data.items[name];
+                if (item.sold > 0) {
+                    var cost = item.sold * item.cost;
+                    var revenue = item.revenue;
+                    var profit = revenue - cost;
+                    totalCost += cost;
+                    totalRevenue += revenue;
+                    totalProfit += profit;
+                    html += '<div class="report-box">';
+                    html += '<h3>' + name + '</h3>';
+                    html += 'Продано: ' + item.sold + ' шт.<br>';
+                    html += 'Закупка: ' + cost + ' руб.<br>';
+                    html += 'Выручка: ' + revenue + ' руб.<br>';
+                    html += 'Прибыль: <span class="' + (profit >= 0 ? 'green' : 'red') + '">' + profit + ' руб.</span>';
+                    html += '</div>';
+                }
+            }
+
+            if (!html) {
+                html = '<p>Нет данных о продажах. Добавьте товары и запишите продажи.</p>';
+            } else {
+                html = '<div class="report-box" style="background:#2c3e50; color:white;">' +
+                    '<h3>ИТОГО</h3>' +
+                    'Выручка: <span class="big-num">' + totalRevenue + ' руб.</span><br>' +
+                    'Прибыль: <span class="big-num green">' + totalProfit + ' руб.</span>' +
+                    '</div>' + html;
+            }
+            document.getElementById("report_content").innerHTML = html;
+        }
+
+        function clearAll() {
+            if (confirm("Точно удалить ВСЕ данные? Это необратимо!")) {
+                localStorage.removeItem("store_data");
+                alert("Данные удалены.");
+                showTab('income');
+            }
+        }
+
+        // Первый запуск
+        renderSaleSelect();
+    </script>
+</body>
+
+</html>
